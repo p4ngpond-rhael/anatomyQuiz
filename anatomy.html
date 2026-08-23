@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anatomy Quiz</title>
+    <link rel="stylesheet" href="anatomy.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Topic Selection Screen -->
+        <div id="topic-selection">
+            <h1>Anatomy Quiz</h1>
+            <h2>Select a Topic</h2>
+            <div class="dropdown">
+                <button class="dropdown-toggle">Choose a Topic</button>
+                <div class="dropdown-menu">
+                    <!-- Buttons populated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quiz-container" class="hidden">
+            <h1 id="quiz-title"></h1>
+            
+            <div class="navigation-buttons">
+                <button id="prev-btn" class="nav-btn">← Previous</button>
+                <div class="question-counter" id="question-counter"></div>
+                <button id="next-btn" class="nav-btn">Next →</button>
+            </div>
+
+            <p id="progress-text"></p>
+            
+            <div id="prompt-area">
+                <div id="question-image-container">
+                    <img id="question-image" src="" alt="Question Image">
+                </div>
+                <span id="prompt-text"></span>
+            </div>
+
+            <!-- Area for dynamic inputs -->
+            <div id="dynamic-inputs-container" class="dynamic-inputs-container">
+                <!-- Inputs generated here based on answers_key_array length -->
+            </div>
+            
+            <button id="submit-btn">Submit Answer</button>
+
+            <div id="feedback-text"></div>
+            <div id="score-summary"></div>
+
+            <div class="control-buttons">
+                <button id="back-btn" class="action-btn" title="Change Topic">Change Topic</button>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="results-section">
+                <div class="results-header">📊 Final Results</div>
+                <div id="results-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class AnatomyQuiz {
+            constructor() {
+                // Flat question rows are easier to move into D1 later.
+                this.questionRows = [
+                    {
+                        id: "anat-001",
+                        topic: "anatomy",
+                        question: "What muscles on the anterior arm are innervated by the musculocutaneous nerve?",
+                        image_url: "",
+                        image_alt: "Anterior compartment of the arm",
+                        answers_key_array: ["coracobrachialis", "biceps brachii", "brachialis"],
+                        explanation: "The musculocutaneous nerve innervates the three muscles of the anterior compartment of the arm."
+                    },
+                    {
+                        id: "anat-002",
+                        topic: "anatomy",
+                        question: "What is the primary function of the triceps brachii?",
+                        image_url: "",
+                        image_alt: "Triceps brachii",
+                        answers_key_array: ["extension of forearm"],
+                        explanation: "The triceps brachii is the large muscle on the back of the upper limb of many vertebrates. It is the muscle principally responsible for extension of the elbow joint (straightening of the arm)."
+                    }
+                ];
+
+                this.quizData = this.groupQuestionsByTopic(this.questionRows);
+
+                this.state = {
+                    topic: null,
+                    questions: [],
+                    currentIndex: 0,
+                    totalCorrect: 0,
+                    totalPartial: 0,
+                    totalWrong: 0
+                };
+                
+                this.elements = this.getElements();
+                this.populateTopicButtons();
+                this.bindEvents();
+            }
+
+            getElements() {
+                return {
+                    topicSelection: document.getElementById('topic-selection'),
+                    dropdown: document.querySelector('.dropdown'),
+                    dropdownToggle: document.querySelector('.dropdown-toggle'),
+                    dropdownMenu: document.querySelector('.dropdown-menu'),
+                    
+                    quizContainer: document.getElementById('quiz-container'),
+                    quizTitle: document.getElementById('quiz-title'),
+                    progressText: document.getElementById('progress-text'),
+                    
+                    promptArea: document.getElementById('prompt-area'),
+                    promptText: document.getElementById('prompt-text'),
+                    imageContainer: document.getElementById('question-image-container'),
+                    questionImage: document.getElementById('question-image'),
+                    
+                    inputsContainer: document.getElementById('dynamic-inputs-container'),
+                    submitBtn: document.getElementById('submit-btn'),
+                    
+                    feedbackText: document.getElementById('feedback-text'),
+                    scoreSummary: document.getElementById('score-summary'),
+                    
+                    questionCounter: document.getElementById('question-counter'),
+                    prevBtn: document.getElementById('prev-btn'),
+                    nextBtn: document.getElementById('next-btn'),
+                    backBtn: document.getElementById('back-btn'),
+                    
+                    resultsSection: document.getElementById('results-section'),
+                    resultsContent: document.getElementById('results-content'),
+                };
+            }
+
+            bindEvents() {
+                this.elements.dropdownToggle.addEventListener('click', () => this.toggleDropdown());
+
+                this.elements.dropdownMenu.addEventListener('click', (e) => {
+                    if (e.target.matches('.topic-button')) {
+                        this.startQuiz(e.target.dataset.topic);
+                        this.toggleDropdown();
+                    }
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!this.elements.dropdown.contains(e.target) && this.elements.dropdown.classList.contains('open')) {
+                        this.toggleDropdown();
+                    }
+                });
+
+                this.elements.submitBtn.addEventListener('click', () => this.checkAnswers());
+                this.elements.prevBtn.addEventListener('click', () => this.previousQuestion());
+                this.elements.nextBtn.addEventListener('click', () => this.nextQuestion());
+                this.elements.backBtn.addEventListener('click', () => this.goBackToTopics());
+                
+                // Allow enter key to submit if focus is in inputs container
+                this.elements.inputsContainer.addEventListener('keyup', (e) => {
+                    if (e.key === 'Enter') {
+                        this.checkAnswers();
+                    }
+                });
+            }
+
+            populateTopicButtons() {
+                const container = this.elements.dropdownMenu;
+                container.innerHTML = ''; 
+                for (const topic in this.quizData) {
+                    const button = document.createElement('button');
+                    button.className = 'topic-button';
+                    button.dataset.topic = topic;
+                    button.textContent = this.formatGroupName(topic);
+                    container.appendChild(button);
+                }
+            }
+
+            toggleDropdown() {
+                this.elements.dropdown.classList.toggle('open');
+            }
+
+            formatGroupName(name) {
+                if (!name) return '';
+                return name
+                    .replace(/_/g, ' ')
+                    .replace(/\b\w/g, l => l.toUpperCase()); 
+            }
+
+            shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+
+            groupQuestionsByTopic(rows) {
+                return rows.reduce((groups, row) => {
+                    if (!groups[row.topic]) {
+                        groups[row.topic] = [];
+                    }
+
+                    groups[row.topic].push({
+                        ...row,
+                        question_image: row.image_url || row.question_image || null,
+                        image: {
+                            src: row.image_url || row.question_image || "",
+                            alt: row.image_alt || "Question image"
+                        }
+                    });
+
+                    return groups;
+                }, {});
+            }
+
+            getQuestionImage(question) {
+                if (question.image?.src) {
+                    return {
+                        src: question.image.src,
+                        alt: question.image.alt || 'Question image'
+                    };
+                }
+
+                if (question.question_image) {
+                    return {
+                        src: question.question_image,
+                        alt: 'Question image'
+                    };
+                }
+
+                if (question.image_url) {
+                    return {
+                        src: question.image_url,
+                        alt: question.image_alt || 'Question image'
+                    };
+                }
+
+                return null;
+            }
+
+            startQuiz(topic, shouldShuffle = true) {
+                // Initialize questions with state tracking
+                const questions = this.quizData[topic].map(q => ({
+                    ...q, 
+                    isCompleted: false, 
+                    isCorrect: false,
+                    userAnswers: [] // Store what they typed
+                }));
+
+                this.state = {
+                    topic,
+                    questions: shouldShuffle ? this.shuffle(questions) : questions,
+                    currentIndex: 0,
+                    totalCorrect: 0,
+                    totalPartial: 0,
+                    totalWrong: 0
+                };
+
+                this.elements.topicSelection.classList.add('hidden');
+                this.elements.quizContainer.classList.remove('hidden');
+                this.elements.quizTitle.textContent = this.formatGroupName(topic);
+                
+                // Hide results section initially
+                this.elements.resultsSection.style.display = 'none';
+                
+                this.loadQuestion();
+                this.updateScoreSummary();
+            }
+
+            loadQuestion() {
+                const question = this.state.questions[this.state.currentIndex];
+                
+                this.elements.questionCounter.textContent = `${this.state.currentIndex + 1} / ${this.state.questions.length}`;
+                this.elements.progressText.textContent = `Question ${this.state.currentIndex + 1} of ${this.state.questions.length}`;
+                
+                this.elements.prevBtn.disabled = this.state.currentIndex === 0;
+                
+                // Determine if we are at the end to change next button behavior
+                if (this.state.currentIndex === this.state.questions.length - 1) {
+                    this.elements.nextBtn.textContent = 'Finish Quiz';
+                } else {
+                    this.elements.nextBtn.textContent = 'Next →';
+                }
+                
+                this.elements.promptText.innerHTML = question.question;
+
+                // Handle Image
+                const questionImage = this.getQuestionImage(question);
+                if (questionImage) {
+                    this.elements.questionImage.src = questionImage.src;
+                    this.elements.questionImage.alt = questionImage.alt;
+                    this.elements.imageContainer.style.display = 'block';
+                } else {
+                    this.elements.imageContainer.style.display = 'none';
+                    this.elements.questionImage.src = '';
+                    this.elements.questionImage.alt = 'Question image';
+                }
+
+                // Generate Dynamic Inputs
+                this.elements.inputsContainer.innerHTML = '';
+                const numBlanks = question.answers_key_array.length;
+                
+                for (let i = 0; i < numBlanks; i++) {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'multi-answer-input';
+                    input.placeholder = `Answer ${i + 1}`;
+                    input.autocomplete = 'off';
+                    input.spellcheck = false;
+                    
+                    // If previously completed, restore values and disable
+                    if (question.isCompleted) {
+                        input.value = question.userAnswers[i] || '';
+                        input.disabled = true;
+                        if (question.answerResults && question.answerResults[i] === true) {
+                            input.classList.add('correct-input');
+                        } else if (question.answerResults && question.answerResults[i] === false) {
+                            input.classList.add('incorrect-input');
+                        }
+                    }
+                    
+                    this.elements.inputsContainer.appendChild(input);
+                }
+
+                // Restore feedback if already completed
+                if (question.isCompleted) {
+                    this.elements.submitBtn.disabled = true;
+                    this.showExplanation(question, question.resultType || (question.isCorrect ? 'correct' : 'incorrect'));
+                } else {
+                    this.elements.submitBtn.disabled = false;
+                    this.elements.feedbackText.innerHTML = '';
+                    
+                    // Focus first input
+                    const firstInput = this.elements.inputsContainer.querySelector('input');
+                    if(firstInput) firstInput.focus();
+                }
+            }
+
+            checkAnswers() {
+                const currentQuestion = this.state.questions[this.state.currentIndex];
+                if (currentQuestion.isCompleted) return;
+
+                const inputs = Array.from(this.elements.inputsContainer.querySelectorAll('input'));
+                const userValues = inputs.map(input => input.value.trim().toLowerCase());
+                
+                // 1. Check for blanks
+                if (userValues.some(val => val === '')) {
+                    this.markQuestionWrong("All fields must be filled in.", inputs);
+                    return;
+                }
+
+                // 2. Check for collisions (duplicates in user answers)
+                const uniqueValues = new Set(userValues);
+                if (uniqueValues.size !== userValues.length) {
+                     this.markQuestionWrong("Duplicate answers are not allowed.", inputs);
+                     return;
+                }
+
+                // 3. Compare against keys
+                // We create a copy of the keys to tick them off
+                let remainingKeys = currentQuestion.answers_key_array.map(ans => ans.toLowerCase());
+                const answerResults = [];
+
+                // Validate each input against remaining valid keys
+                userValues.forEach((val) => {
+                    const matchIndex = remainingKeys.indexOf(val);
+                    if (matchIndex > -1) {
+                        // Found a match, remove it from pool of remaining valid answers
+                        remainingKeys.splice(matchIndex, 1);
+                        answerResults.push(true);
+                    } else {
+                        // Value isn't in the keys, or was already used
+                        answerResults.push(false);
+                    }
+                });
+                
+                const matchedCount = answerResults.filter(Boolean).length;
+                const allCorrect = matchedCount === userValues.length && remainingKeys.length === 0;
+                const hasAnyCorrect = matchedCount > 0;
+                const isMultiAnswer = currentQuestion.answers_key_array.length > 1;
+                let resultType = 'incorrect';
+
+                if (allCorrect) {
+                    resultType = 'correct';
+                } else if (isMultiAnswer && hasAnyCorrect) {
+                    resultType = 'partial';
+                }
+
+                // Store answers and mark completed
+                currentQuestion.userAnswers = userValues;
+                currentQuestion.answerResults = answerResults;
+                currentQuestion.isCompleted = true;
+                currentQuestion.resultType = resultType;
+                currentQuestion.isCorrect = resultType === 'correct';
+                this.elements.submitBtn.disabled = true;
+                inputs.forEach(input => input.disabled = true);
+
+                inputs.forEach((input, index) => {
+                    if (answerResults[index]) {
+                        input.classList.add('correct-input');
+                    } else {
+                        input.classList.add('incorrect-input');
+                    }
+                });
+
+                if (resultType === 'correct') {
+                    this.state.totalCorrect++;
+                } else if (resultType === 'partial') {
+                    this.state.totalPartial++;
+                } else {
+                    this.state.totalWrong++;
+                }
+
+                this.showExplanation(currentQuestion, resultType);
+                
+                this.updateScoreSummary();
+            }
+            
+            markQuestionWrong(message, inputs) {
+                 this.elements.feedbackText.innerHTML = `<div style="color: var(--danger-color); font-weight: bold; margin-bottom: 10px;">${message}</div>`;
+                 // Brief shake or error indication could go here
+                 inputs.forEach(input => {
+                     if(input.value.trim() === '') {
+                         input.style.borderColor = 'var(--danger-color)';
+                         setTimeout(() => input.style.borderColor = '', 2000);
+                     }
+                 });
+            }
+
+            showExplanation(question, resultType) {
+                let html = '';
+                if (resultType === 'correct') {
+                    html += `<div class="correct" style="font-weight:bold; font-size: 1.2em; margin-bottom: 10px;">Correct!</div>`;
+                } else if (resultType === 'partial') {
+                    html += `<div class="partial" style="font-weight:bold; font-size: 1.2em; margin-bottom: 10px;">Partially Correct</div>`;
+                    html += `<div style="margin-bottom: 10px;"><strong>Some answers were correct, but not all.</strong></div>`;
+                    html += `<div style="margin-bottom: 10px;"><strong>Accepted Answers:</strong> ${question.answers_key_array.join(', ')}</div>`;
+                } else {
+                    html += `<div class="incorrect" style="font-weight:bold; font-size: 1.2em; margin-bottom: 10px;">Incorrect</div>`;
+                    html += `<div style="margin-bottom: 10px;"><strong>Accepted Answers:</strong> ${question.answers_key_array.join(', ')}</div>`;
+                }
+                
+                if (question.explanation) {
+                    html += `
+                    <div class="summary-feedback-card">
+                        <p><strong>Explanation:</strong><br/> ${question.explanation}</p>
+                    </div>`;
+                }
+                
+                this.elements.feedbackText.innerHTML = html;
+            }
+
+            previousQuestion() {
+                if (this.state.currentIndex > 0) {
+                    this.state.currentIndex--;
+                    this.loadQuestion();
+                }
+            }
+
+            nextQuestion() {
+                if (this.state.currentIndex < this.state.questions.length - 1) {
+                    this.state.currentIndex++;
+                    this.loadQuestion();
+                } else {
+                    this.finishQuiz();
+                }
+            }
+
+            updateScoreSummary() {
+                const total = this.state.questions.length;
+                const completed = this.state.totalCorrect + this.state.totalPartial + this.state.totalWrong;
+                
+                this.elements.scoreSummary.innerHTML =
+                    `Progress: ${completed}/${total} | ` +
+                    `Correct: ${this.state.totalCorrect} | ` +
+                    `Partial: ${this.state.totalPartial} | ` +
+                    `Wrong: ${this.state.totalWrong}`;
+            }
+
+            finishQuiz() {
+                this.elements.promptArea.style.display = 'none';
+                this.elements.inputsContainer.style.display = 'none';
+                this.elements.submitBtn.style.display = 'none';
+                this.elements.feedbackText.innerHTML = '';
+                this.elements.progressText.innerHTML = '';
+                this.elements.questionCounter.innerHTML = '';
+                
+                document.querySelector('.navigation-buttons').style.display = 'none';
+
+                let html = '';
+                this.state.questions.forEach((question, index) => {
+                    const statusClass = question.resultType === 'correct'
+                        ? 'completed'
+                        : question.resultType === 'partial'
+                            ? 'partial'
+                            : 'incorrect';
+                    
+                    html += `<div class="question-result ${statusClass}">
+                        <div style="margin-bottom: 10px;"><strong>Q${index + 1}:</strong> ${question.question}</div>
+                        <div style="margin-bottom: 5px;"><strong>Your Answers:</strong> ${question.userAnswers.join(', ') || 'None'}</div>`;
+                        
+                    if (question.resultType !== 'correct') {
+                        html += `<div style="color: var(--danger-color); margin-bottom: 5px;"><strong>Correct Answers:</strong> ${question.answers_key_array.join(', ')}</div>`;
+                    }
+                    html += `</div>`;
+                });
+                
+                this.elements.resultsContent.innerHTML = html;
+                this.elements.resultsSection.style.display = 'block';
+            }
+
+            goBackToTopics() {
+                this.elements.quizContainer.classList.add('hidden');
+                this.elements.topicSelection.classList.remove('hidden');
+                
+                // Reset UI elements that might have been hidden in finishQuiz
+                this.elements.promptArea.style.display = 'flex';
+                this.elements.inputsContainer.style.display = 'flex';
+                this.elements.submitBtn.style.display = 'block';
+                document.querySelector('.navigation-buttons').style.display = 'flex';
+                this.elements.resultsSection.style.display = 'none';
+                
+                if (this.elements.dropdown.classList.contains('open')) {
+                    this.toggleDropdown();
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            new AnatomyQuiz();
+        });
+    </script>
+</body>
+</html>
